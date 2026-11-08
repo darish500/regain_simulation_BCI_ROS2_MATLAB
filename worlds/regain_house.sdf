@@ -1,0 +1,221 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <world name="regain_world">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Outside ground (grass). The only surface with collision. -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>100 100</size></plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane><normal>0 0 1</normal><size>100 100</size></plane>
+          </geometry>
+          <material>
+            <ambient>0.35 0.55 0.30 1</ambient>
+            <diffuse>0.35 0.55 0.30 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Floors: visual only, one colour per room -->
+    <model name="house_floors">
+      <static>true</static>
+      <link name="link">
+        <visual name="hallway_floor">
+          <pose>5 0.8 0.005 0 0 0</pose>
+          <geometry><box><size>10 1.6 0.01</size></box></geometry>
+          <material><ambient>0.75 0.70 0.60 1</ambient><diffuse>0.75 0.70 0.60 1</diffuse></material>
+        </visual>
+        <visual name="living_floor">
+          <pose>2.5 4.8 0.005 0 0 0</pose>
+          <geometry><box><size>5 6.4 0.01</size></box></geometry>
+          <material><ambient>0.65 0.50 0.35 1</ambient><diffuse>0.65 0.50 0.35 1</diffuse></material>
+        </visual>
+        <visual name="kitchen_floor">
+          <pose>7.5 3.3 0.005 0 0 0</pose>
+          <geometry><box><size>5 3.4 0.01</size></box></geometry>
+          <material><ambient>0.80 0.82 0.85 1</ambient><diffuse>0.80 0.82 0.85 1</diffuse></material>
+        </visual>
+        <visual name="bedroom_floor">
+          <pose>7.5 6.5 0.005 0 0 0</pose>
+          <geometry><box><size>5 3 0.01</size></box></geometry>
+          <material><ambient>0.60 0.55 0.70 1</ambient><diffuse>0.60 0.55 0.70 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Walls: every segment is 2.5 m high and 0.15 m thick -->
+    <model name="house_walls">
+      <static>true</static>
+      <link name="link">
+
+        <!-- Outer walls -->
+        <visual name="south_v"><pose>5 0 1.25 0 0 0</pose><geometry><box><size>10.15 0.15 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="south_c"><pose>5 0 1.25 0 0 0</pose><geometry><box><size>10.15 0.15 2.5</size></box></geometry></collision>
+
+        <visual name="north_v"><pose>5 8 1.25 0 0 0</pose><geometry><box><size>10.15 0.15 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="north_c"><pose>5 8 1.25 0 0 0</pose><geometry><box><size>10.15 0.15 2.5</size></box></geometry></collision>
+
+        <visual name="east_v"><pose>10 4 1.25 0 0 0</pose><geometry><box><size>0.15 8 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="east_c"><pose>10 4 1.25 0 0 0</pose><geometry><box><size>0.15 8 2.5</size></box></geometry></collision>
+
+        <!-- West wall, front door opening at y 0.3 to 1.3 -->
+        <visual name="west_a_v"><pose>0 0.15 1.25 0 0 0</pose><geometry><box><size>0.15 0.3 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="west_a_c"><pose>0 0.15 1.25 0 0 0</pose><geometry><box><size>0.15 0.3 2.5</size></box></geometry></collision>
+
+        <visual name="west_b_v"><pose>0 4.65 1.25 0 0 0</pose><geometry><box><size>0.15 6.7 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="west_b_c"><pose>0 4.65 1.25 0 0 0</pose><geometry><box><size>0.15 6.7 2.5</size></box></geometry></collision>
+
+        <!-- Hallway north wall, doors at x 2.0-3.0 (living) and x 7.0-8.0 (kitchen) -->
+        <visual name="hall_a_v"><pose>1 1.6 1.25 0 0 0</pose><geometry><box><size>2 0.15 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="hall_a_c"><pose>1 1.6 1.25 0 0 0</pose><geometry><box><size>2 0.15 2.5</size></box></geometry></collision>
+
+        <visual name="hall_b_v"><pose>5 1.6 1.25 0 0 0</pose><geometry><box><size>4 0.15 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="hall_b_c"><pose>5 1.6 1.25 0 0 0</pose><geometry><box><size>4 0.15 2.5</size></box></geometry></collision>
+
+        <visual name="hall_c_v"><pose>9 1.6 1.25 0 0 0</pose><geometry><box><size>2 0.15 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="hall_c_c"><pose>9 1.6 1.25 0 0 0</pose><geometry><box><size>2 0.15 2.5</size></box></geometry></collision>
+
+        <!-- Middle wall at x=5: kitchen opening y 2.7-3.9, bedroom door y 6.0-7.0 -->
+        <visual name="mid_a_v"><pose>5 2.15 1.25 0 0 0</pose><geometry><box><size>0.15 1.1 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="mid_a_c"><pose>5 2.15 1.25 0 0 0</pose><geometry><box><size>0.15 1.1 2.5</size></box></geometry></collision>
+
+        <visual name="mid_b_v"><pose>5 4.95 1.25 0 0 0</pose><geometry><box><size>0.15 2.1 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="mid_b_c"><pose>5 4.95 1.25 0 0 0</pose><geometry><box><size>0.15 2.1 2.5</size></box></geometry></collision>
+
+        <visual name="mid_c_v"><pose>5 7.5 1.25 0 0 0</pose><geometry><box><size>0.15 1 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="mid_c_c"><pose>5 7.5 1.25 0 0 0</pose><geometry><box><size>0.15 1 2.5</size></box></geometry></collision>
+
+        <!-- Wall between kitchen and bedroom -->
+        <visual name="bedroom_v"><pose>7.5 5 1.25 0 0 0</pose><geometry><box><size>5 0.15 2.5</size></box></geometry><material><ambient>0.9 0.88 0.85 1</ambient><diffuse>0.9 0.88 0.85 1</diffuse></material></visual>
+        <collision name="bedroom_c"><pose>7.5 5 1.25 0 0 0</pose><geometry><box><size>5 0.15 2.5</size></box></geometry></collision>
+
+      </link>
+    </model>
+
+        <!-- Furniture: one static model, one link, many shapes -->
+    <model name="house_furniture">
+      <static>true</static>
+      <link name="link">
+
+        <!-- ================= LIVING ROOM ================= -->
+        <!-- Rug (visual only) -->
+        <visual name="rug_v"><pose>1.8 5.5 0.015 0 0 0</pose><geometry><box><size>2.4 1.8 0.01</size></box></geometry><material><ambient>0.60 0.20 0.20 1</ambient><diffuse>0.60 0.20 0.20 1</diffuse></material></visual>
+
+        <!-- Sofa: seat, back, two arms -->
+        <visual name="sofa_seat_v"><pose>0.6 5.5 0.225 0 0 0</pose><geometry><box><size>0.8 2.0 0.45</size></box></geometry><material><ambient>0.35 0.40 0.50 1</ambient><diffuse>0.35 0.40 0.50 1</diffuse></material></visual>
+        <collision name="sofa_seat_c"><pose>0.6 5.5 0.225 0 0 0</pose><geometry><box><size>0.8 2.0 0.45</size></box></geometry></collision>
+        <visual name="sofa_back_v"><pose>0.25 5.5 0.6 0 0 0</pose><geometry><box><size>0.15 2.0 0.5</size></box></geometry><material><ambient>0.30 0.35 0.45 1</ambient><diffuse>0.30 0.35 0.45 1</diffuse></material></visual>
+        <collision name="sofa_back_c"><pose>0.25 5.5 0.6 0 0 0</pose><geometry><box><size>0.15 2.0 0.5</size></box></geometry></collision>
+        <visual name="sofa_arm_s_v"><pose>0.6 4.425 0.3 0 0 0</pose><geometry><box><size>0.8 0.15 0.6</size></box></geometry><material><ambient>0.30 0.35 0.45 1</ambient><diffuse>0.30 0.35 0.45 1</diffuse></material></visual>
+        <collision name="sofa_arm_s_c"><pose>0.6 4.425 0.3 0 0 0</pose><geometry><box><size>0.8 0.15 0.6</size></box></geometry></collision>
+        <visual name="sofa_arm_n_v"><pose>0.6 6.575 0.3 0 0 0</pose><geometry><box><size>0.8 0.15 0.6</size></box></geometry><material><ambient>0.30 0.35 0.45 1</ambient><diffuse>0.30 0.35 0.45 1</diffuse></material></visual>
+        <collision name="sofa_arm_n_c"><pose>0.6 6.575 0.3 0 0 0</pose><geometry><box><size>0.8 0.15 0.6</size></box></geometry></collision>
+
+        <!-- Coffee table: top + base, one collision box -->
+        <visual name="coffee_top_v"><pose>1.8 5.5 0.4 0 0 0</pose><geometry><box><size>0.9 0.6 0.05</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <visual name="coffee_base_v"><pose>1.8 5.5 0.19 0 0 0</pose><geometry><box><size>0.8 0.5 0.38</size></box></geometry><material><ambient>0.30 0.20 0.12 1</ambient><diffuse>0.30 0.20 0.12 1</diffuse></material></visual>
+        <collision name="coffee_c"><pose>1.8 5.5 0.21 0 0 0</pose><geometry><box><size>0.9 0.6 0.42</size></box></geometry></collision>
+
+        <!-- Bookshelf against the north wall -->
+        <visual name="shelf_v"><pose>2.5 7.7 0.8 0 0 0</pose><geometry><box><size>1.2 0.35 1.6</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <collision name="shelf_c"><pose>2.5 7.7 0.8 0 0 0</pose><geometry><box><size>1.2 0.35 1.6</size></box></geometry></collision>
+
+        <!-- Plant: pot + foliage -->
+        <visual name="pot_v"><pose>4.5 7.6 0.2 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.4</length></cylinder></geometry><material><ambient>0.55 0.30 0.20 1</ambient><diffuse>0.55 0.30 0.20 1</diffuse></material></visual>
+        <collision name="pot_c"><pose>4.5 7.6 0.2 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>0.4</length></cylinder></geometry></collision>
+        <visual name="leaves_v"><pose>4.5 7.6 0.7 0 0 0</pose><geometry><sphere><radius>0.3</radius></sphere></geometry><material><ambient>0.15 0.50 0.20 1</ambient><diffuse>0.15 0.50 0.20 1</diffuse></material></visual>
+
+        <!-- ================= KITCHEN / DINING ================= -->
+        <!-- Counter along the east wall, with worktop and sink -->
+        <visual name="counter_v"><pose>9.6 2.95 0.45 0 0 0</pose><geometry><box><size>0.6 2.1 0.9</size></box></geometry><material><ambient>0.55 0.40 0.25 1</ambient><diffuse>0.55 0.40 0.25 1</diffuse></material></visual>
+        <collision name="counter_c"><pose>9.6 2.95 0.45 0 0 0</pose><geometry><box><size>0.6 2.1 0.9</size></box></geometry></collision>
+        <visual name="worktop_v"><pose>9.6 2.95 0.92 0 0 0</pose><geometry><box><size>0.64 2.1 0.04</size></box></geometry><material><ambient>0.15 0.15 0.17 1</ambient><diffuse>0.15 0.15 0.17 1</diffuse></material></visual>
+        <visual name="sink_v"><pose>9.6 2.5 0.945 0 0 0</pose><geometry><box><size>0.4 0.5 0.01</size></box></geometry><material><ambient>0.70 0.72 0.75 1</ambient><diffuse>0.70 0.72 0.75 1</diffuse></material></visual>
+
+        <!-- Fridge in the north-east corner -->
+        <visual name="fridge_v"><pose>9.55 4.5 0.9 0 0 0</pose><geometry><box><size>0.7 0.7 1.8</size></box></geometry><material><ambient>0.80 0.82 0.85 1</ambient><diffuse>0.80 0.82 0.85 1</diffuse></material></visual>
+        <collision name="fridge_c"><pose>9.55 4.5 0.9 0 0 0</pose><geometry><box><size>0.7 0.7 1.8</size></box></geometry></collision>
+
+        <!-- Dining table: top + pedestal -->
+        <visual name="dtable_top_v"><pose>7.5 3.7 0.725 0 0 0</pose><geometry><box><size>1.4 0.9 0.05</size></box></geometry><material><ambient>0.50 0.35 0.20 1</ambient><diffuse>0.50 0.35 0.20 1</diffuse></material></visual>
+        <collision name="dtable_top_c"><pose>7.5 3.7 0.725 0 0 0</pose><geometry><box><size>1.4 0.9 0.05</size></box></geometry></collision>
+        <visual name="dtable_base_v"><pose>7.5 3.7 0.35 0 0 0</pose><geometry><box><size>0.3 0.3 0.7</size></box></geometry><material><ambient>0.30 0.20 0.12 1</ambient><diffuse>0.30 0.20 0.12 1</diffuse></material></visual>
+        <collision name="dtable_base_c"><pose>7.5 3.7 0.35 0 0 0</pose><geometry><box><size>0.3 0.3 0.7</size></box></geometry></collision>
+
+        <!-- Chair 1 (north side, x=7.2) -->
+        <visual name="c1_seat_v"><pose>7.2 4.5 0.45 0 0 0</pose><geometry><box><size>0.4 0.4 0.04</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <visual name="c1_base_v"><pose>7.2 4.5 0.215 0 0 0</pose><geometry><box><size>0.3 0.3 0.43</size></box></geometry><material><ambient>0.30 0.20 0.12 1</ambient><diffuse>0.30 0.20 0.12 1</diffuse></material></visual>
+        <visual name="c1_back_v"><pose>7.2 4.68 0.67 0 0 0</pose><geometry><box><size>0.4 0.04 0.4</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <collision name="c1_c"><pose>7.2 4.5 0.235 0 0 0</pose><geometry><box><size>0.4 0.4 0.47</size></box></geometry></collision>
+
+        <!-- Chair 2 (north side, x=7.8) -->
+        <visual name="c2_seat_v"><pose>7.8 4.5 0.45 0 0 0</pose><geometry><box><size>0.4 0.4 0.04</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <visual name="c2_base_v"><pose>7.8 4.5 0.215 0 0 0</pose><geometry><box><size>0.3 0.3 0.43</size></box></geometry><material><ambient>0.30 0.20 0.12 1</ambient><diffuse>0.30 0.20 0.12 1</diffuse></material></visual>
+        <visual name="c2_back_v"><pose>7.8 4.68 0.67 0 0 0</pose><geometry><box><size>0.4 0.04 0.4</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <collision name="c2_c"><pose>7.8 4.5 0.235 0 0 0</pose><geometry><box><size>0.4 0.4 0.47</size></box></geometry></collision>
+
+        <!-- Chair 3 (south side, x=7.2) -->
+        <visual name="c3_seat_v"><pose>7.2 2.95 0.45 0 0 0</pose><geometry><box><size>0.4 0.4 0.04</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <visual name="c3_base_v"><pose>7.2 2.95 0.215 0 0 0</pose><geometry><box><size>0.3 0.3 0.43</size></box></geometry><material><ambient>0.30 0.20 0.12 1</ambient><diffuse>0.30 0.20 0.12 1</diffuse></material></visual>
+        <visual name="c3_back_v"><pose>7.2 2.77 0.67 0 0 0</pose><geometry><box><size>0.4 0.04 0.4</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <collision name="c3_c"><pose>7.2 2.95 0.235 0 0 0</pose><geometry><box><size>0.4 0.4 0.47</size></box></geometry></collision>
+
+        <!-- Chair 4 (south side, x=7.8) -->
+        <visual name="c4_seat_v"><pose>7.8 2.95 0.45 0 0 0</pose><geometry><box><size>0.4 0.4 0.04</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <visual name="c4_base_v"><pose>7.8 2.95 0.215 0 0 0</pose><geometry><box><size>0.3 0.3 0.43</size></box></geometry><material><ambient>0.30 0.20 0.12 1</ambient><diffuse>0.30 0.20 0.12 1</diffuse></material></visual>
+        <visual name="c4_back_v"><pose>7.8 2.77 0.67 0 0 0</pose><geometry><box><size>0.4 0.04 0.4</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <collision name="c4_c"><pose>7.8 2.95 0.235 0 0 0</pose><geometry><box><size>0.4 0.4 0.47</size></box></geometry></collision>
+
+        <!-- ================= BEDROOM ================= -->
+        <!-- Bed: frame, mattress, headboard, two pillows, blanket -->
+        <visual name="bed_frame_v"><pose>8.8 6.8 0.15 0 0 0</pose><geometry><box><size>2.0 1.5 0.3</size></box></geometry><material><ambient>0.35 0.22 0.12 1</ambient><diffuse>0.35 0.22 0.12 1</diffuse></material></visual>
+        <visual name="mattress_v"><pose>8.75 6.8 0.4 0 0 0</pose><geometry><box><size>1.9 1.4 0.2</size></box></geometry><material><ambient>0.85 0.88 0.95 1</ambient><diffuse>0.85 0.88 0.95 1</diffuse></material></visual>
+        <collision name="bed_c"><pose>8.8 6.8 0.25 0 0 0</pose><geometry><box><size>2.0 1.5 0.5</size></box></geometry></collision>
+        <visual name="headboard_v"><pose>9.85 6.8 0.45 0 0 0</pose><geometry><box><size>0.1 1.6 0.9</size></box></geometry><material><ambient>0.35 0.22 0.12 1</ambient><diffuse>0.35 0.22 0.12 1</diffuse></material></visual>
+        <visual name="pillow1_v"><pose>9.5 6.4 0.55 0 0 0</pose><geometry><box><size>0.4 0.55 0.1</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+        <visual name="pillow2_v"><pose>9.5 7.2 0.55 0 0 0</pose><geometry><box><size>0.4 0.55 0.1</size></box></geometry><material><ambient>0.95 0.95 0.95 1</ambient><diffuse>0.95 0.95 0.95 1</diffuse></material></visual>
+        <visual name="blanket_v"><pose>8.3 6.8 0.51 0 0 0</pose><geometry><box><size>1.1 1.42 0.03</size></box></geometry><material><ambient>0.20 0.40 0.60 1</ambient><diffuse>0.20 0.40 0.60 1</diffuse></material></visual>
+
+        <!-- Bedside table -->
+        <visual name="bedside_v"><pose>9.65 5.75 0.25 0 0 0</pose><geometry><box><size>0.4 0.4 0.5</size></box></geometry><material><ambient>0.45 0.30 0.18 1</ambient><diffuse>0.45 0.30 0.18 1</diffuse></material></visual>
+        <collision name="bedside_c"><pose>9.65 5.75 0.25 0 0 0</pose><geometry><box><size>0.4 0.4 0.5</size></box></geometry></collision>
+
+        <!-- Wardrobe against the north wall -->
+        <visual name="wardrobe_v"><pose>6.2 7.6 1.0 0 0 0</pose><geometry><box><size>1.4 0.6 2.0</size></box></geometry><material><ambient>0.60 0.50 0.40 1</ambient><diffuse>0.60 0.50 0.40 1</diffuse></material></visual>
+        <collision name="wardrobe_c"><pose>6.2 7.6 1.0 0 0 0</pose><geometry><box><size>1.4 0.6 2.0</size></box></geometry></collision>
+
+        <!-- Destination marker beside the bed (visual only) -->
+        <visual name="destination_v"><pose>8.0 5.6 0.02 0 0 0</pose><geometry><cylinder><radius>0.4</radius><length>0.01</length></cylinder></geometry><material><ambient>0.10 0.80 0.20 1</ambient><diffuse>0.10 0.80 0.20 1</diffuse></material></visual>
+
+      </link>
+    </model>
+
+  </world>
+</sdf>

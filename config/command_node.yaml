@@ -1,0 +1,8 @@
+regain_command_node:
+  ros__parameters:
+    linear_speed: 0.3
+    angular_speed: 0.5
+    max_linear_speed: 0.5
+    max_angular_speed: 0.8
+    command_timeout: 0.7 #in s.
+    publish_rate: 20.0 #frquenxy 
