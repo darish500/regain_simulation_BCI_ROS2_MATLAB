@@ -207,6 +207,73 @@ y=0  +--[front door at west, y 0.3-1.3]-+
 - A green disc at (8.0, 5.6), beside the bed, marks a destination for later navigation work.
 - There is no ceiling, so the interior is visible from above.
 
+## Key equations
+
+Symbols: `v` linear velocity (m/s), `w` angular velocity (rad/s), `r` wheel radius = 0.17 m, `L` wheel separation = 0.58 m, `T` command timeout = 0.7 s.
+
+**1. Differential-drive kinematics.** The Gazebo DiffDrive plugin turns each `Twist` into wheel speeds. We don't implement this ourselves, but its two parameters (`r` and `L`) come from our model:
+
+```
+wheel_left  = (v - w * L/2) / r      [rad/s]
+wheel_right = (v + w * L/2) / r      [rad/s]
+```
+
+Worked values with `L/2 = 0.29` and `r = 0.17`:
+
+| Command | v | w | Left wheel | Right wheel |
+|---|---|---|---|---|
+| FORWARD | 0.3 | 0 | +1.76 rad/s | +1.76 rad/s |
+| BACKWARD | -0.3 | 0 | -1.76 rad/s | -1.76 rad/s |
+| LEFT (spin in place) | 0 | 0.5 | -0.85 rad/s | +0.85 rad/s |
+| RIGHT (spin in place) | 0 | -0.5 | +0.85 rad/s | -0.85 rad/s |
+
+Plugin limits as wheel speed: 1.0 m/s is 5.88 rad/s, and 1.5 rad/s of spin is 2.56 rad/s per wheel.
+
+**2. Odometry (unicycle model).** The plugin integrates the pose from the same velocities:
+
+```
+x     += v * cos(theta) * dt
+y     += v * sin(theta) * dt
+theta += w * dt
+```
+
+**3. Speed clamp (command node).** Configured speeds can never exceed the hard caps:
+
+```
+v_cmd = min(|linear_speed|,  max_linear_speed)     = min(0.3, 0.5) = 0.3 m/s
+w_cmd = min(|angular_speed|, max_angular_speed)    = min(0.5, 0.8) = 0.5 rad/s
+```
+
+**4. Command freshness (timeout).** A command moves the chair only while it is fresh:
+
+```
+fresh  <=>  (t_now - t_last_command) <= T          T = 0.7 s
+```
+
+A single one-shot `FORWARD` therefore moves the chair at most about `0.3 * 0.7 = 0.21 m`, or a one-shot `LEFT` about `0.5 * 0.7 = 0.35 rad` (20 degrees). The real figure is a little different because of the plugin's acceleration limits and the 20 Hz publish interval.
+
+**5. Wheel inertia (solid cylinder).** The wheel inertias in `model.sdf` come from the solid-cylinder formulas, with `m = 3 kg`, `r = 0.17 m` and length `h = 0.06 m`:
+
+```
+Ixx = Iyy = m * (3*r^2 + h^2) / 12 = 3 * (0.0867 + 0.0036) / 12 = 0.0226 kg m^2
+Izz       = m * r^2 / 2            = 0.0434 kg m^2
+```
+
+The body inertia (`40 kg`, `ixx 3.0`, `iyy 4.3`, `izz 3.0`) is a rough estimate for a body of about 0.7 x 0.5 x 0.7 m, not derived from the geometry. Refine it if stability becomes an issue.
+
+**6. Geometry checks.** These back the navigation space:
+
+```
+Width across the wheels   = L + wheel length         = 0.58 + 0.06 = 0.64 m
+Clearance in a 1.0 m door = (1.0 - 0.64) / 2          = 0.18 m per side
+Front-corner turn radius  = sqrt(0.60^2 + 0.17^2)     = 0.62 m   (footplate front edge at x = 0.60)
+Turning circle diameter   = 2 * 0.62                  = 1.25 m
+Hallway clear width       = 1.6 - 0.15 (wall)         = 1.45 m
+Margin when spinning      = (1.45 - 1.25) / 2         = 0.10 m per side
+```
+
+The 10 cm margin is why the chair can spin in the hallway, but only when it is centred.
+
 ## Known limitations
 
 - **This is not a complete safety system.** The ROS 2 layer validates commands, applies a timeout and limits speed. It has no obstacle awareness and cannot judge whether a valid command is sensible.
