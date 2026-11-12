@@ -15,7 +15,7 @@ EEG dataset -> MATLAB (processing + ML) -> movement intention -> ROS 2 command n
 | 1 | ROS 2 package, Gazebo Harmonic launch, `/clock` bridge | Done |
 | 2 | Wheelchair model, house world, `/regain/cmd_vel` drive interface | Done |
 | 3 | High-level command interface: `/regain/bci_command`, validation, timeout, speed limits | Done |
-| 4+ | MATLAB BCI connection, output watchdog, sensors, navigation | Not started |
+| 4+ | MATLAB BCI connection, output watchdog, sensors, navigation | Navigation Not done n the ROS2 ccommunication with matlab not done |
 
 MATLAB and EEG processing are not integrated yet. High-level commands are sent from the ROS 2 command line.
 
