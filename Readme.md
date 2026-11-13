@@ -1,12 +1,18 @@
 # ReGain: `regain_simulation`
 
-ReGain is a brain-computer-interface (BCI) assistive mobility project. The goal is a simulated powered wheelchair that receives high-level movement intentions from a BCI pipeline, validates them through a ROS 2 safety layer, and executes them in Gazebo.
+ReGain is a brain-computer-interface (BCI) assistive mobility project. The goal is a simulated powered wheelchair that receives high-level intentions from a BCI pipeline, validates them through a ROS 2 safety layer, and executes them in Gazebo.
 
-This package holds the simulation layer: a powered wheelchair and a compact indoor house in Gazebo Harmonic, plus a ROS 2 command node that turns high-level commands into limited, time-bounded velocity commands.
+This package holds the ROS 2 and simulation side: a powered wheelchair and a compact indoor house in Gazebo Harmonic, a command node that turns high-level motion commands into limited, time-bounded velocity commands, and an application node that turns the EEG intent stream from MATLAB into destination selection.
 
 ```
-EEG dataset -> MATLAB (processing + ML) -> movement intention -> ROS 2 command node -> /regain/cmd_vel -> Gazebo wheelchair
+EEG dataset -> MATLAB (processing + ML) -> /regain/eeg_intent -> application node -> destination state
+                                                                  (not yet connected)
+                          source -> /regain/bci_command -> command node -> /regain/cmd_vel -> Gazebo wheelchair
 ```
+
+The two chains are not connected yet. The application node produces a selected and a confirmed destination and never moves the chair. `/regain/bci_command` is still driven only from the ROS 2 command line.
+
+The MATLAB side (EEG processing, classifier, temporal filter and the MATLAB-to-ROS 2 link) is a separate project in `~/workspace/Matlab_workspace/regain_simulation/` with its own README.
 
 ## Status
 
@@ -14,15 +20,16 @@ EEG dataset -> MATLAB (processing + ML) -> movement intention -> ROS 2 command n
 |---|---|---|
 | 1 | ROS 2 package, Gazebo Harmonic launch, `/clock` bridge | Done |
 | 2 | Wheelchair model, house world, `/regain/cmd_vel` drive interface | Done |
-| 3 | High-level command interface: `/regain/bci_command`, validation, timeout, speed limits | Done |
-| 4+ | MATLAB BCI connection, output watchdog, sensors, navigation | Navigation Not done n the ROS2 ccommunication with matlab not done |
-
-MATLAB and EEG processing are not integrated yet. High-level commands are sent from the ROS 2 command line.
+| 3 | High-level motion commands: `/regain/bci_command`, validation, timeout, speed limits | Done |
+| 4, 5, 6A | EEG preprocessing, classifier, temporal filter | Done, in the MATLAB project |
+| 6B | MATLAB to ROS 2 link on `/regain/eeg_intent` | Done, in the MATLAB project |
+| 7 | Application state machine: destination selection and confirmation, `/regain/app_state` | Done, no motion |
+| Later | Voice feedback, output watchdog, sensors, navigation, connecting a confirmed destination to motion | Not started |
 
 ## Requirements
 
 - Ubuntu 24.04
-- ROS 2 Jazzy
+- ROS 2 Jazzy, with `rmw_cyclonedds_cpp` (the MATLAB link uses it)
 - Gazebo Harmonic (installed through the `ros-jazzy-gz-*-vendor` packages)
 - `ros_gz_sim` and `ros_gz_bridge` (part of `ros-jazzy-ros-gz`)
 - `rclpy`, `std_msgs`, `geometry_msgs` (part of the ROS 2 desktop install)
@@ -41,7 +48,9 @@ regain_simulation/
 │       └── model.sdf               # wheelchair geometry + DiffDrive plugin
 ├── regain_simulation/
 │   ├── __init__.py
-│   └── command_node.py             # /regain/bci_command -> /regain/cmd_vel
+│   ├── command_node.py             # /regain/bci_command -> /regain/cmd_vel
+│   ├── state_machine.py            # Stage 7 logic, pure Python, no ROS, has a self-test
+│   └── regain_application_node.py  # Stage 7 node: /regain/eeg_intent -> /regain/app_state
 ├── worlds/
 │   ├── regain_house.sdf            # house, furniture, destination marker (default world)
 │   └── empty_world.sdf             # flat ground, kept as a debugging world
@@ -52,9 +61,11 @@ regain_simulation/
 └── setup.cfg
 ```
 
+`setup.py` has two console entry points: `command_node` (started by the launch file) and `regain_application_node` (started with `ros2 run`).
+
 ## Build
 
-This package lives inside an existing workspace with other projects, so always build it alone:
+This package lives inside an existing workspace with other projects, so always build it alone. Build from a shell with no Python virtual environment active (run `deactivate` first if your prompt shows one), because `colcon` records the active Python in the installed entry-point scripts and a virtual environment without `rclpy` would break `ros2 run`.
 
 ```bash
 cd ~/workspace/ros2_ws
@@ -81,6 +92,14 @@ QT_QPA_PLATFORM=xcb ros2 launch regain_simulation regain_sim.launch.py
 ```
 
 Stop with Ctrl+C. The launch reports an `[ERROR]` with exit code `-2` for the `gazebo` process. This is cosmetic: ROS 2 launch labels the SIGINT shutdown that way, and no processes are left running.
+
+The application node is not part of the launch file. Start it in its own terminal (after sourcing the workspace):
+
+```bash
+ros2 run regain_simulation regain_application_node
+```
+
+It does not need Gazebo.
 
 ## Drive the wheelchair
 
@@ -134,12 +153,16 @@ ros2 topic echo /regain/odom --field pose.pose.position --once
 
 | Topic | Type | Direction | Notes |
 |---|---|---|---|
-| `/regain/bci_command` | `std_msgs/msg/String` | Source (CLI now, MATLAB later) to command node | `FORWARD`, `BACKWARD`, `LEFT`, `RIGHT`, `STOP` |
+| `/regain/bci_command` | `std_msgs/msg/String` | Source (command line for now) to command node | `FORWARD`, `BACKWARD`, `LEFT`, `RIGHT`, `STOP`. Plain words, not JSON |
 | `/regain/cmd_vel` | `geometry_msgs/msg/Twist` | Command node to Gazebo | Published at 20 Hz. The command node should be its only publisher |
 | `/regain/odom` | `nav_msgs/msg/Odometry` | Gazebo to ROS 2 | Published by the DiffDrive plugin, frame `odom` |
 | `/clock` | `rosgraph_msgs/msg/Clock` | Gazebo to ROS 2 | Simulation time |
+| `/regain/eeg_intent` | `std_msgs/msg/String` (JSON) | MATLAB to application node | Reliable, volatile, depth 10. Published at 4 Hz by the MATLAB replay |
+| `/regain/app_state` | `std_msgs/msg/String` (JSON) | Application node to anyone | Reliable, transient local, depth 1. Published only when something happens |
 
 `/regain/cmd_vel`, `/regain/odom` and `/clock` go through one `ros_gz_bridge` `parameter_bridge` node. The direction of each is fixed by the bridge argument: `[` is Gazebo to ROS, `]` is ROS to Gazebo.
+
+The two EEG-side topics are separate from `/regain/bci_command` on purpose: the EEG intents (`LEFT_FIST` and so on) only have meaning inside the application state, so they never go to the motion node directly.
 
 ## Command node
 
@@ -148,7 +171,7 @@ ros2 topic echo /regain/odom --field pose.pose.position --once
 - **Validation.** Any message that is not one of the five commands is rejected, the chair stops, and a warning is logged.
 - **Timeout.** The node publishes every 50 ms. If no valid command arrived within `command_timeout` seconds, it publishes zero velocity. This covers a source that crashes or disconnects.
 - **Speed limits.** Configured speeds are clamped to the hard caps, whatever the config file says. The Gazebo DiffDrive plugin has its own limits (1.0 m/s, 1.5 rad/s) as a further layer.
-- **Confidence extension point.** `parse_message()` returns `(intention, confidence)`, with confidence fixed at 1.0 for now, and `is_valid()` is where a confidence threshold will go. Change those two methods, and the message type, when MATLAB starts sending confidence.
+- **Confidence extension point.** `parse_message()` returns `(intention, confidence)`, with confidence fixed at 1.0 for now, and `is_valid()` is where a confidence threshold would go. The command node is unchanged since Stage 3. The EEG confidence travels on `/regain/eeg_intent`, not here.
 
 Parameters, in `config/command_node.yaml`:
 
@@ -163,10 +186,115 @@ Parameters, in `config/command_node.yaml`:
 
 The top key in the YAML must match the node name (`regain_command_node`), or the parameters are silently ignored. Check a value with `ros2 param get /regain_command_node command_timeout`.
 
+## Application node (Stage 7)
+
+`regain_application_node` consumes the EEG intent stream from MATLAB and runs a deterministic destination-selection state machine. The logic is in `state_machine.py` (no ROS imports), and the node in `regain_application_node.py` wraps it. **The node never publishes `/regain/cmd_vel` or `/regain/bci_command` and never moves the wheelchair.**
+
+### Input
+
+`/regain/eeg_intent` carries JSON in a `std_msgs/String`, for example:
+
+```
+{"seq":14,"t":1.79453323454494E+9,"intent":"LEFT_FIST","confidence":0.354,"agreement":"4/5"}
+```
+
+The node reads only `intent`. `confidence`, `agreement`, `seq` and `t` are diagnostic and may be any type or missing. During the MATLAB filter's warm-up `agreement` can read `4/4` while `intent` is still `NO_DECISION`, which is why only `intent` is used. Valid intents: `LEFT_FIST`, `RIGHT_FIST`, `BOTH_FEET`, `REST`, `NO_DECISION`. Malformed JSON, a missing `intent` field or an unknown value gives a warning, no action, and the node keeps running.
+
+### States and destinations
+
+States: `IDLE`, `SELECTING`, `CONFIRMING`, `CONFIRMED`, `CANCELLED`. `CANCELLED` is a one-step transient: it is entered and left in the same step, so the node rests in `IDLE` afterwards.
+
+Destinations: `BEDROOM`, `KITCHEN`, `LIVING_ROOM`, `ENTRANCE`, with wrap-around. The node starts in `IDLE` with `BEDROOM` highlighted, so the first `RIGHT_FIST` selects `KITCHEN`.
+
+| Intent | `IDLE` | `SELECTING` | `CONFIRMING` | `CONFIRMED` |
+|---|---|---|---|---|
+| `RIGHT_FIST` | next destination, go to `SELECTING` | next destination | ignored | ignored |
+| `LEFT_FIST` | previous destination, go to `SELECTING` | previous destination | cancel, back to `SELECTING` | cancel: clear the confirmed destination, `CANCELLED`, then `IDLE` |
+| `BOTH_FEET` | ignored | ask: `CONFIRMING` | confirm: `CONFIRMED`, destination stored | ignored |
+| `REST`, `NO_DECISION` | no action | no action | no action | no action |
+
+Confirmation is two steps on purpose: the first `BOTH_FEET` only asks ("Confirm destination: X"), and a second `BOTH_FEET`, after a `REST` or `NO_DECISION` in between, confirms. A confirmed destination is stored and logged and the chair stays stopped.
+
+### Latch (debounce)
+
+The EEG stream is continuous at 4 Hz, so one sustained intent arrives as many messages. The node acts once on an actionable intent and then ignores further actionable intents until a `REST` or `NO_DECISION` arrives. Four `RIGHT_FIST` in a row move the destination once. A direct switch with no `REST` in between (`RIGHT_FIST` then `LEFT_FIST`) ignores the second one. The latch is message-based, not time-based.
+
+### Output
+
+- **Terminal log.** Only real events are logged (state changes, destination changes, ignored actionable intents, warnings). `REST`, `NO_DECISION` and latched repeats are silent, so 4 Hz does not flood the terminal. On Ctrl+C the node prints a `Summary:` line with its counters.
+- **`/regain/app_state`.** One JSON message per state-changing action, plus one at start-up. Late subscribers get the last one (transient local). Example:
+
+```
+{"state": "CONFIRMED", "destination": "KITCHEN", "confirmed_destination": "KITCHEN", "last_intent": "BOTH_FEET", "events": ["Destination confirmed: KITCHEN", "State: CONFIRMED"]}
+```
+
+Summary counters: `received`, `malformed`, `no_action` (`REST` and `NO_DECISION`), `suppressed` (actionable but latched), `acted`, `destination_changes`, `confirmations`. `acted` counts every actionable message that produced an event, including "Ignored X in state Y" events, so it is larger than the number of real state changes.
+
+### Test without MATLAB
+
+Offline logic test, no ROS needed (20 checks, ends with `ALL PASS`):
+
+```bash
+cd ~/workspace/ros2_ws/src/regain_simulation/regain_simulation
+python3 state_machine.py
+```
+
+With the node running (`ros2 run regain_simulation regain_application_node`), watch the state in a second terminal:
+
+```bash
+ros2 topic echo --full-length /regain/app_state
+```
+
+and in a third, define a small helper (it exists only in that terminal) and send intents:
+
+```bash
+send() { for i in "$@"; do ros2 topic pub --once /regain/eeg_intent std_msgs/msg/String "{data: '{\"intent\":\"$i\"}'}" >/dev/null; done; }
+
+send RIGHT_FIST RIGHT_FIST RIGHT_FIST RIGHT_FIST REST        # one change to KITCHEN
+send BOTH_FEET REST BOTH_FEET REST                           # ask, then confirm KITCHEN
+send LEFT_FIST REST                                          # cancel the confirmed destination
+ros2 topic pub --once /regain/eeg_intent std_msgs/msg/String "{data: '{not json'}"   # warning only
+```
+
+### Test with MATLAB
+
+Start a fresh node first (the topic is volatile, so messages sent before the node is up are lost), then run a replay from the MATLAB project (see its README, Stage 6B). Wait a second after MATLAB finishes, then press Ctrl+C on the node to read the summary. If you copy the node output with `tee`, use `tee -i`, otherwise Ctrl+C also stops `tee` before the summary is written:
+
+```bash
+ros2 run regain_simulation regain_application_node 2>&1 | tee -i /tmp/stage7.log
+```
+
+### Results
+
+| Test | Result |
+|---|---|
+| Offline self-test | 20 of 20 checks pass |
+| Fake stream: next, previous, confirm, repeated intent, no decision | as expected; 4 x `RIGHT_FIST` and `REST` gave one change |
+| Fake stream: malformed JSON, unknown intent, missing `intent` | 3 warnings, no state change, node kept running |
+| Fake stream: confirm then cancel | `CONFIRMING`, `CONFIRMED`, then `CANCELLED` and `IDLE`, destination cleared |
+| Replay, subject 1 (837 messages, 20 Hz) | `received=837, malformed=0, no_action=637, suppressed=149, acted=51, destination_changes=51, confirmations=0`. Run twice, identical. The stream contained no `BOTH_FEET`, so the confirm path was not reached |
+| Replay, subject 6 (828 messages, 20 Hz) | `received=828, malformed=0, no_action=449, suppressed=289, acted=90, destination_changes=3, confirmations=3`. 3 confirm prompts, 3 confirmations, 2 cancels |
+
+The MATLAB counts reconcile with the node counters in both replays (messages, `REST` plus `NO_DECISION`, and actionable intents). The replay rate was 20 Hz instead of 4 Hz to save time, which does not change the counts because the latch is message-based.
+
+Subject 6 was chosen because its stream has many `BOTH_FEET` decisions (363 of 828 messages), so it reaches the confirm path. That is the classifier over-predicting `BOTH_FEET` for this subject, and the confirmations are not evidence of intent.
+
 ## Architecture
 
 ```
- source (CLI now, MATLAB later)
+ MATLAB (ReGainTemporalFilter -> ReGainROS2Link)
+        │  JSON in std_msgs/String, 4 Hz
+        ▼
+ /regain/eeg_intent ──▶ regain_application_node
+                           · latch (one action per held intent)
+                           · state machine: IDLE / SELECTING / CONFIRMING / CONFIRMED
+        │  JSON state, on change
+        ▼
+ /regain/app_state          (read-only; nothing consumes it yet, and no motion)
+
+ - - - - - - - - - - - - - not connected yet - - - - - - - - - - - - -
+
+ source (command line now)
         │  std_msgs/String, e.g. "FORWARD"
         ▼
  /regain/bci_command ──▶ regain_command_node
@@ -186,7 +314,7 @@ The top key in the YAML must match the node name (`regain_command_node`), or the
 
 ## The house
 
-Approximate layout, in metres (the front door is on the west wall, and the chair spawns just inside it):
+Approximate layout, in metres. The front door is on the west wall (`D`, y 0.3 to 1.3), and the chair spawns just inside it:
 
 ```
 y=8  +--------------+------------------+
@@ -196,8 +324,8 @@ y=8  +--------------+------------------+
      |              [opening 2.7-3.9]  |
      |              |  KITCHEN/DINING  |
 y=1.6+---[door]-----+-------[door]-----+
-     |           HALLWAY               |
-y=0  +--[front door at west, y 0.3-1.3]-+
+     D           HALLWAY               |
+y=0  +--------------------------------+
     x=0           x=5               x=10
 ```
 
@@ -206,6 +334,7 @@ y=0  +--[front door at west, y 0.3-1.3]-+
 - Furniture: sofa, coffee table, bookshelf and plant in the living room. Counter, sink, fridge, dining table and four chairs in the kitchen. Bed, bedside table and wardrobe in the bedroom.
 - A green disc at (8.0, 5.6), beside the bed, marks a destination for later navigation work.
 - There is no ceiling, so the interior is visible from above.
+- There is no "outside" yet. The `ENTRANCE` destination exists only as a name in the application node, with no pose behind it.
 
 ## Key equations
 
@@ -277,18 +406,27 @@ The 10 cm margin is why the chair can spin in the hallway, but only when it is c
 ## Known limitations
 
 - **This is not a complete safety system.** The ROS 2 layer validates commands, applies a timeout and limits speed. It has no obstacle awareness and cannot judge whether a valid command is sensible.
-- **The timeout protects against the command source dying, not the command node dying.** If `regain_command_node` crashes while the chair is moving, the DiffDrive plugin keeps the last velocity. An output-side watchdog is needed in a later stage.
+- **The EEG side is weak and the application node does not fix that.** The MATLAB classifier is about 0.32 accurate on unseen subjects (chance 0.25), and about 7 in 10 `BOTH_FEET` decisions are false. The two-step confirmation and the latch reduce accidental actions but do not make confirmation trustworthy. Nothing in this package shows that EEG can safely control a wheelchair.
+- **A confirmed destination does nothing yet.** The application node stores and logs it. No navigation exists, and nothing connects the application node to `/regain/bci_command`.
+- **No voice feedback yet.** The terminal log and `/regain/app_state` are the only outputs. Voice would be a separate ROS 2 node reading `/regain/app_state`, not part of Gazebo.
+- **The application node is not in the launch file** and must be started separately.
+- **Held intents need a `REST` or `NO_DECISION` between actions.** A real user who switches direction directly loses one command. In a replay, the MATLAB filter's per-trial reset adds extra `NO_DECISION` messages that re-arm the latch, so a continuous live stream would behave differently. This is inferred from the timing, not measured.
+- **Cancelling clears the confirmed destination but leaves the highlighted one where it was.**
+- **The `acted` counter includes ignored events** (see the Application node section).
+- **Only two subjects were replayed** (1 and 6). The `ENTRANCE` destination has no pose.
+- **Cosmetic:** pressing Ctrl+C on the application node prints "Failed to publish log message to rosout", because the ROS context is already closed when the summary is logged. The summary itself is written.
+- **The command-node timeout protects against the command source dying, not the command node dying.** If `regain_command_node` crashes while the chair is moving, the DiffDrive plugin keeps the last velocity. An output-side watchdog is needed in a later stage.
 - **The timeout uses wall time**, so it keeps counting if the simulation is paused.
-- **Confidence is a placeholder.** Only the extension point exists, and the real message format will be decided with the MATLAB interface.
 - Odometry is published as a message only. There is no `odom -> base_link` TF transform yet, which Nav2 and RViz will need.
 - The chair has no sensors yet. Obstacle detection will need a lidar or depth camera.
 
 ## Roadmap
 
-- MATLAB BCI connection, including a confidence value
+- MATLAB app to visualise the 4 Hz intent stream, send simulated intents and show `/regain/app_state`
+- Voice feedback node reading `/regain/app_state`
 - Output-side watchdog and a stronger safety supervisor
 - Obstacle sensing
-- Navigation
+- Navigation to the confirmed destination, including an outside area and a pose for each destination
 - Rehabilitation visualization
 
 ## License

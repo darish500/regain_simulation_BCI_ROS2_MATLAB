@@ -29,6 +29,7 @@ setup(
     entry_points={
         'console_scripts': [
             'command_node = regain_simulation.command_node:main',
+            'regain_application_node = regain_simulation.regain_application_node:main',
         ],
     },
 )

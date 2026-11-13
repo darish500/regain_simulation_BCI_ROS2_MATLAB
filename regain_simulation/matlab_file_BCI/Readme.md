@@ -1,13 +1,14 @@
 # ReGain: MATLAB EEG pipeline and intention classifier
 
 MATLAB side of ReGain, a BCI-based assistive mobility prototype.
-This folder covers **Stage 4** (EEG preprocessing), **Stage 5** (intention classifier) and **Stage 6A** (temporal decision layer).
-ROS 2, Gazebo, the state machine and voice feedback belong to later stages and are not in this folder.
+This folder covers **Stage 4** (EEG preprocessing), **Stage 5** (intention classifier), **Stage 6A** (temporal decision layer) and **Stage 6B** (MATLAB to ROS 2 link).
+The ROS 2 package, Gazebo, the state machine and voice feedback are not in this folder.
 
 ```
 public EEG dataset -> MATLAB preprocessing -> labelled trials
                    -> CSP + LDA classifier -> predicted EEG class + confidence
                    -> temporal filter (vote over consecutive windows) -> intent or NO_DECISION
+                   -> ReGainROS2Link -> /regain/eeg_intent (JSON in std_msgs/String)
 ```
 
 The classifier only outputs an **EEG class number and a confidence**, and the temporal filter only outputs an **EEG class name or `NO_DECISION`**. Neither knows about destinations or wheelchair commands. That mapping is applied later.
@@ -18,6 +19,7 @@ The classifier only outputs an **EEG class number and a confidence**, and the te
 - Signal Processing Toolbox (`butter`, `filtfilt`, `pwelch`, `bandpower`)
 - Statistics and Machine Learning Toolbox (`fitcdiscr`, `fitcecoc`, `confusionmat`, `binocdf`)
 - Internet access on the first run, to download the EDF files (about 300 MB for 20 subjects)
+- ROS Toolbox (Stage 6B only), with ROS 2 Jazzy on the same machine and `rmw_cyclonedds_cpp` installed
 
 ## Folder layout
 
@@ -26,6 +28,7 @@ regain_simulation/
   ReGainEEG.m            Stage 4: loading, preprocessing, epoching, features, saving
   ReGainClassifier.m     Stage 5: CSP, LDA/SVM, evaluation, final model, predictOne
   ReGainTemporalFilter.m Stage 6A: voting over consecutive predictions, evaluation methods
+  ReGainROS2Link.m       Stage 6B: publishes intents to ROS 2 (fake stream, replay)
   run_stage4.m           runs the whole Stage 4 pipeline
   run_stage5.m           runs evaluation, trains and verifies the final model
   run_stage6a.m          evaluates the temporal decision layer
@@ -67,9 +70,9 @@ run_stage5        % evaluate, train the final model, verify it
 run_stage6a       % evaluate the temporal decision layer
 ```
 
-Stage 4 takes several minutes the first time because of the downloads. Stage 5 takes a few minutes, mostly for the 20-fold cross-subject evaluation. `run_stage6a` takes under a minute if `results/stream_*.mat` exist. If they are missing it regenerates them (about 3 minutes).
+Stage 4 takes several minutes the first time because of the downloads. Stage 5 takes a few minutes, mostly for the 20-fold cross-subject evaluation. `run_stage6a` takes under a minute if `results/stream_*.mat` exist. If they are missing it regenerates them (about 3 minutes). Stage 6B has no run script; see its own section for the test commands.
 
-After editing a method in a class file, run `clear bci` (or `clear eeg`) and create the object again. Do not use `clear classes`, which prints warnings about Simulink classes.
+After editing a method in a class file, run `clear bci` (or `clear eeg`, `clear link`) and create the object again. Do not use `clear classes`, which prints warnings about Simulink classes.
 
 ## Stage 4: preprocessing
 
@@ -262,6 +265,102 @@ No temporal window makes this classifier safe on its own. If a temporal layer is
 
 Rates above are per window position inside cued trials, not per second of real operation.
 
+## Stage 6B: MATLAB to ROS 2 link
+
+Implemented in `ReGainROS2Link.m`. It publishes the EEG intent stream into ROS 2. It does not change the classifier or the temporal filter, and it does not publish on `/regain/bci_command`, which stays the motion input of the ROS 2 command node.
+
+### Interface
+
+| Item | Value |
+|---|---|
+| Topic | `/regain/eeg_intent` |
+| Type | `std_msgs/msg/String`, payload is JSON |
+| QoS | reliable, volatile, keep last 10 |
+| Rate | set by the caller; the replay uses 4 Hz (the 0.25 s window hop) |
+| Node | `/regain_matlab_link`, domain 0, `rmw_cyclonedds_cpp` |
+
+Message example:
+
+```
+{"seq":14,"t":1.79453323454494E+9,"intent":"LEFT_FIST","confidence":0.354,"agreement":"4/5"}
+```
+
+| Field | Meaning |
+|---|---|
+| `seq` | message counter, +1 per message, starts at 1 for each new `ReGainROS2Link` object |
+| `t` | Unix time in UTC, seconds (may be written in scientific notation) |
+| `intent` | `NO_DECISION`, `LEFT_FIST`, `RIGHT_FIST`, `BOTH_FEET` or `REST` |
+| `confidence` | mean confidence of the winning votes, or `null` for `NO_DECISION` |
+| `agreement` | filter votes, for example `"4/5"` |
+
+**Consumers must act on `intent` only.** During warm-up `agreement` can read `4/4` while `intent` is still `NO_DECISION`, because the filter does not decide before its buffer is full. An unknown intent word raises an error in MATLAB and is never sent.
+
+### Why the RMW and domain are set in the class
+
+The ROS 2 side uses `rmw_cyclonedds_cpp` on domain 0. MATLAB inherited neither variable (it was not started from a terminal), and the `ros2node` default RMW is `rmw_fastrtps_cpp`, so the constructor sets both with `setenv` before the first node is created. In a MATLAB session that has already created a ROS 2 node, the RMW cannot be changed; restart MATLAB.
+
+### Methods
+
+| Method | Use |
+|---|---|
+| `ReGainROS2Link()` | creates the node and publisher |
+| `publishIntent(intent, confidence, agreement)` | validates and sends one message |
+| `runFakeStream(nMsgs, rateHz)` | fixed repeating pattern, for link tests with no EEG |
+| `replayStream(T, filt, rateHz)` | replays cross-validated window predictions (`results/stream_subject.mat`, table `T`) through a `ReGainTemporalFilter` and publishes each output. Resets the filter at every new trial. Returns a log table (`seq`, `y_true`, `pred`, `intent`, `agreement`) |
+
+### How to test (no Gazebo needed)
+
+Terminal, with the ROS 2 environment sourced:
+
+```bash
+ros2 topic echo /regain/eeg_intent
+ros2 topic hz /regain/eeg_intent
+```
+
+MATLAB, fake stream (80 messages, about 20 s):
+
+```matlab
+link = ReGainROS2Link();
+link.runFakeStream(80, 4);
+```
+
+MATLAB, replay (first subject, first three trials, 27 messages):
+
+```matlab
+S = load('results/stream_subject.mat');
+T = S.T;
+T = T(T.subject == T.subject(1), :);
+[~,~,g] = unique(T(:, {'run','trial'}), 'rows', 'stable');
+T = T(g <= 3, :);
+link = ReGainROS2Link();
+f    = ReGainTemporalFilter(5);
+L    = link.replayStream(T, f, 4);   % not named "log", which would hide MATLAB's log function
+disp(L)
+```
+
+After editing the class, run `clear link` and create the object again (it is a handle class).
+
+### Results
+
+| Test | Result |
+|---|---|
+| MATLAB node visible to `ros2 node list` | yes, with no ROS 2 launch running |
+| Fake stream | 80 of 80 received, `seq` 1 to 80 with no gaps, content as sent |
+| Rate | 4.000 Hz average, intervals 0.246 to 0.254 s |
+| Replay | 27 messages sent. `seq` 1 to 22 compared with the echo and identical in `intent` and `agreement`. `seq` 23 to 27 are in the MATLAB log but were not in the echo that was captured |
+| Trial boundaries | the filter resets (`1/1` at `seq` 10 and 19) |
+| JSON | `confidence` is `null` during warm-up and a float once a decision is made |
+
+### Stage 6B limitations
+
+- No ROS 2 receiver existed when Stage 6B was tested, so only `ros2 topic echo` and `ros2 topic hz` were used on the stream. The Stage 7 application node now consumes it (see the ROS package README). `ros2 topic info` was never run.
+- The publisher is volatile, so a subscriber that starts mid-stream does not receive earlier messages. Not tested.
+- Only the first subject's first three trials were replayed. Longer replays are untested.
+- The stream carries `seq` and `t`, but nothing drops stale or repeated messages yet.
+- The replay shows the weakness of the classifier (in the second replayed trial, true right fist was never predicted). That is a classifier property, not a link fault.
+- The replay uses cross-validated window predictions. Live `predictOne` has not been connected, and no final window-trained model exists.
+- The RMW and domain are fixed in the constructor.
+
 ## Limitations
 
 - **Accuracy is not usable for direct control.** About one trial in three is correct for an unseen subject. Right_fist and both_feet, the planned "next" and "confirm" commands, are at or just above chance recall.
@@ -275,19 +374,20 @@ Rates above are per window position inside cued trials, not per second of real o
 - **Parameter choices were made on the same folds used for reporting.** The numbers are slightly optimistic.
 - **Public dataset only.** No EEG hardware and no real-time test.
 - **Input differs from the original prompt.** `predictOne` takes an epoch, not a feature vector, because CSP features need the epoch.
+- **The link is one-way.** Stage 6B only publishes. The ROS 2 application node (Stage 7, in the ROS package) consumes `/regain/eeg_intent`, but nothing flows back to MATLAB yet.
 
-## Planned application mapping (not in this code)
+## Application mapping (implemented in the ROS 2 package, not in this folder)
 
-Not hard-coded in the classifier. It belongs to the state-machine stage.
+Not hard-coded in the classifier or the filter. The Stage 7 node `regain_application_node` applies it (see the ROS package README).
 
-| EEG class | Planned role |
+| EEG intent | Role |
 |---|---|
-| left_fist | cancel / back |
 | right_fist | next destination |
-| both_feet | confirm destination |
-| rest | stop / no command |
+| left_fist | previous destination; also backs out of a confirmation and cancels a confirmed destination |
+| both_feet | confirm: the first one asks, the second one confirms |
+| rest, no_decision | no action (they also re-arm the application latch) |
 | both_fists | reserved (excluded from the model) |
 
 ## Next
 
-Stage 6B: connect MATLAB to ROS 2 Jazzy (publishing on `/regain/bci_command`), starting with a read-only check of the MATLAB release, ROS Toolbox and the DDS settings (`ROS_DOMAIN_ID`, RMW implementation). If the voting layer is kept, train a final window-trained model first. The application layer then applies the mapping and the safety logic (spoken confirmation, REST as stop).
+Stages 6B (the MATLAB to ROS 2 link) and 7 (the ROS 2 application state machine) are done. Next on the MATLAB side is an app that shows the 4 Hz intent stream, sends simulated intents and shows the application state. Voice feedback and navigation are ROS 2 work. If the voting layer is kept, train a final window-trained model before connecting live `predictOne`.
